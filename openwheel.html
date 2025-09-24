@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Open_wheel — Custom Random Wheel</title>
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --muted:#9aa6bf; --accent:#6ee7b7;
+      --glass: rgba(255,255,255,0.04);
+      --radius:14px; --gap:14px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color-scheme: dark;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:linear-gradient(180deg,#07101a 0%, #071829 100%); color:#e6eef8;
+      padding:28px; display:flex; gap:28px; align-items:flex-start; justify-content:center;
+    }
+    .app{width:1200px; max-width:100%; display:grid; grid-template-columns:380px 1fr; gap:var(--gap)}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02)); border-radius:var(--radius); padding:18px; box-shadow:0 6px 30px rgba(2,6,23,0.6);}
+    h1{font-size:20px;margin:0 0 12px 0}
+    .muted{color:var(--muted);font-size:13px}
+
+    /* left panel */
+    .left{display:flex;flex-direction:column;gap:12px}
+    .controls{display:flex;gap:8px}
+    input,button,select{border-radius:10px;padding:8px 10px;border:0;background:var(--glass);color:inherit}
+    textarea{width:100%;min-height:90px;background:var(--glass);border-radius:10px;padding:10px;color:inherit;border:0}
+    .list{max-height:320px;overflow:auto;padding:8px;border-radius:8px;background:rgba(0,0,0,0.06)}
+    .item{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;margin-bottom:8px;background:linear-gradient(90deg, rgba(255,255,255,0.01), transparent)}
+    .color-swatch{width:28px;height:28px;border-radius:6px;flex-shrink:0}
+    .item .meta{flex:1}
+    .small{font-size:12px;color:var(--muted)}
+    .row{display:flex;gap:8px;align-items:center}
+
+    /* right panel */
+    .right{display:flex;flex-direction:column;gap:12px}
+    .canvas-wrap{display:flex;gap:18px;align-items:center}
+    canvas{background:transparent;border-radius:12px}
+    .spin-btn{font-weight:700;padding:12px 18px;background:linear-gradient(90deg,var(--accent),#34d399);border-radius:12px;border:0;cursor:pointer}
+    .secondary{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+
+    .panel{padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.018), rgba(0,0,0,0.02))}
+    .flex-between{display:flex;justify-content:space-between;align-items:center}
+    .tiny{font-size:12px}
+    .footer{font-size:13px;color:var(--muted);text-align:center;padding-top:6px}
+
+    /* responsive */
+    @media (max-width:1000px){.app{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="card left">
+      <h1>Open_wheel</h1>
+      <div class="muted">Add names, set weights & colors, then spin. Profiles auto-save to localStorage.</div>
+
+      <div class="panel">
+        <div class="row" style="margin-bottom:8px">
+          <input id="nameInput" placeholder="Enter name (or comma-separated list)" style="flex:1" />
+          <button id="addBtn">Add</button>
+          <button id="pasteBtn" title="Paste clipboard names">Paste</button>
+        </div>
+        <div class="row" style="margin-bottom:8px">
+          <button id="shuffleColors" class="secondary">Randomize Colors</button>
+          <button id="autoWeights" class="secondary">Auto Weights</button>
+          <button id="importCsv" class="secondary">Import CSV</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button id="exportJson" class="secondary">Export JSON</button>
+          <button id="loadSample" class="secondary">Load Sample</button>
+          <button id="clearAll" class="secondary">Clear</button>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:8px">
+        <div class="flex-between"><div class="tiny">Names & weights</div><div class="small">Drag to reorder (future update)</div></div>
+        <div class="list" id="nameList"></div>
+      </div>
+
+      <div class="panel" style="margin-top:8px">
+        <div class="flex-between"><div>Advanced</div><div class="small">Saved: <span id="savedIndicator">—</span></div></div>
+        <div style="margin-top:8px" class="tiny">
+          <label>Spin duration (s): <input id="spinDuration" type="number" min="1" value="5" style="width:72px" /></label>
+        </div>
+        <div style="margin-top:8px" class="tiny">
+          <label>Easing: <select id="easing"><option value="easeOutCubic">easeOutCubic</option><option value="easeOutQuart">easeOutQuart</option><option value="linear">linear</option></select></label>
+        </div>
+        <div style="margin-top:8px" class="tiny">
+          <label><input id="showProb" type="checkbox" checked /> Show probabilities on segments</label>
+        </div>
+        <div style="margin-top:8px" class="tiny">
+          <label><input id="enableSounds" type="checkbox" /> Enable tick sound</label>
+        </div>
+      </div>
+
+      <div style="margin-top:12px" class="panel small">
+        Tips: Add names quickly by pasting a comma/newline separated list. Use weights to bias results. Export JSON to share a wheel.
+      </div>
+    </div>
+
+    <div class="card right">
+      <div class="canvas-wrap">
+        <div>
+          <canvas id="wheelCanvas" width="620" height="620"></canvas>
+          <div class="footer">Pointer style:
+            <select id="pointerStyle">
+              <option value="triangle">Triangle (top)</option>
+              <option value="arrow">Arrow</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:12px">
+          <div class="panel">
+            <div class="flex-between"><strong>Preview / Spin</strong><div class="small">Seg: <span id="segCount">0</span></div></div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="spin-btn" id="spinBtn">SPIN</button>
+              <button id="quickSpin" class="secondary">Quick</button>
+              <button id="stopBtn" class="secondary">Stop</button>
+            </div>
+            <div style="margin-top:12px" class="tiny">Result: <span id="resultLabel">—</span></div>
+          </div>
+
+          <div class="panel">
+            <div class="flex-between"><div>Appearance</div><div class="small">Auto-assign colors if blank</div></div>
+            <div style="margin-top:8px" class="tiny">
+              <label>Font size: <input id="fontSize" type="number" value="14" style="width:70px" /></label>
+            </div>
+            <div style="margin-top:8px" class="tiny">
+              <label>Stroke width: <input id="strokeWidth" type="number" value="2" style="width:70px" /></label>
+            </div>
+            <div style="margin-top:8px" class="tiny">
+              <label>Spin sound: <input id="tickSound" placeholder="Optional tick audio URL" style="width:100%" /></label>
+            </div>
+          </div>
+
+          <div class="panel">
+            <strong>Profiles</strong>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <input id="profileName" placeholder="Profile name" />
+              <button id="saveProfile" class="secondary">Save</button>
+              <button id="loadProfile" class="secondary">Load</button>
+            </div>
+            <div style="margin-top:8px" class="tiny">Profiles are stored in localStorage. Use export/import to move between devices.</div>
+          </div>
+
+        </div>
+      </div>
+
+      <div style="margin-top:12px" class="panel">
+        <strong>Extras</strong>
+        <div style="margin-top:8px" class="tiny">Weight mode: <label><input type="radio" name="weightMode" value="equal" checked /> Equal</label> <label><input type="radio" name="weightMode" value="custom" /> Custom</label></div>
+        <div style="margin-top:8px" class="tiny">You can also drop a CSV file on the page with two columns: name,weight</div>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+// Simple Open_wheel single-file implementation. Designed to be extendable.
+const state = {
+  items: [], // {id,name,color,weight}
+  isSpinning:false,
+  angle:0,
+  spinAnimation:null
+}
+
+// util
+const randColor = ()=>{
+  const h = Math.floor(Math.random()*360);
+  return `hsl(${h}deg 70% 55%)`;
+}
+const uid = ()=>Math.random().toString(36).slice(2,9)
+
+// elements
+const nameInput = document.getElementById('nameInput');
+const addBtn = document.getElementById('addBtn');
+const pasteBtn = document.getElementById('pasteBtn');
+const nameList = document.getElementById('nameList');
+const spinBtn = document.getElementById('spinBtn');
+const quickSpin = document.getElementById('quickSpin');
+const stopBtn = document.getElementById('stopBtn');
+const wheelCanvas = document.getElementById('wheelCanvas');
+const ctx = wheelCanvas.getContext('2d');
+const segCount = document.getElementById('segCount');
+const resultLabel = document.getElementById('resultLabel');
+
+// settings
+const spinDurationInput = document.getElementById('spinDuration');
+const easingSelect = document.getElementById('easing');
+const showProb = document.getElementById('showProb');
+const enableSounds = document.getElementById('enableSounds');
+const fontSizeInput = document.getElementById('fontSize');
+const strokeWidthInput = document.getElementById('strokeWidth');
+const shuffleColorsBtn = document.getElementById('shuffleColors');
+const autoWeightsBtn = document.getElementById('autoWeights');
+const clearAll = document.getElementById('clearAll');
+const exportJson = document.getElementById('exportJson');
+const importCsv = document.getElementById('importCsv');
+const loadSample = document.getElementById('loadSample');
+const pointerStyle = document.getElementById('pointerStyle');
+const savedIndicator = document.getElementById('savedIndicator');
+const tickSoundInput = document.getElementById('tickSound');
+const saveProfile = document.getElementById('saveProfile');
+const loadProfile = document.getElementById('loadProfile');
+const profileName = document.getElementById('profileName');
+
+// persistence
+function saveState(){
+  localStorage.setItem('open_wheel_state', JSON.stringify({items:state.items}));
+  savedIndicator.textContent = new Date().toLocaleTimeString();
+}
+function loadState(){
+  const raw = localStorage.getItem('open_wheel_state');
+  if(!raw) return;
+  try{const j=JSON.parse(raw); state.items=j.items||[]; renderList(); drawWheel();}catch(e){}
+}
+
+// rendering
+function renderList(){
+  nameList.innerHTML='';
+  state.items.forEach((it,idx)=>{
+    const div=document.createElement('div'); div.className='item';
+    const sw=document.createElement('div'); sw.className='color-swatch'; sw.style.background=it.color||randColor();
+    sw.title='Color'; sw.addEventListener('click',()=>{
+      const c = prompt('Enter color (CSS color or hex) for '+it.name, it.color||''); if(c){it.color=c; sw.style.background=c; drawWheel(); saveState();}
+    })
+    const meta=document.createElement('div'); meta.className='meta';
+    meta.innerHTML = `<div style="font-weight:600">${escapeHtml(it.name)}</div><div class="small">weight: <input data-id="${it.id}" class="winput" type="number" value="${it.weight||1}" style="width:70px;background:transparent;border:0;color:inherit" /></div>`;
+    const del=document.createElement('button'); del.textContent='✕'; del.title='Delete'; del.addEventListener('click',()=>{state.items=state.items.filter(x=>x.id!==it.id); renderList(); drawWheel(); saveState();});
+    div.appendChild(sw); div.appendChild(meta); div.appendChild(del);
+    nameList.appendChild(div);
+  });
+  // attach weight handlers
+  nameList.querySelectorAll('.winput').forEach(inp=>{
+    inp.addEventListener('change', (e)=>{ const id=e.target.dataset.id; const v=parseFloat(e.target.value)||1; const it=state.items.find(x=>x.id===id); if(it){it.weight=v; drawWheel(); saveState();}})
+  });
+  segCount.textContent = state.items.length;
+}
+
+function drawWheel(){
+  const w = wheelCanvas.width; const h=wheelCanvas.height; const cx=w/2, cy=h/2; const r=Math.min(cx,cy)-10;
+  ctx.clearRect(0,0,w,h);
+  if(state.items.length===0){
+    ctx.fillStyle='rgba(255,255,255,0.03)'; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='var(--muted)'; ctx.font='18px sans-serif'; ctx.textAlign='center'; ctx.fillText('Add names to build the wheel',cx,cy);
+    return;
+  }
+  const total = state.items.reduce((s,i)=>s+(i.weight||1),0);
+  let startAngle = state.angle;
+  for(let i=0;i<state.items.length;i++){
+    const it=state.items[i]; const slice=(it.weight||1)/total*Math.PI*2;
+    const end = startAngle + slice;
+    // fill
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,startAngle,end); ctx.closePath();
+    ctx.fillStyle = it.color || randColor(); ctx.fill();
+    // stroke
+    ctx.lineWidth = +strokeWidthInput.value; ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.stroke();
+    // text
+    const mid = (startAngle+end)/2; ctx.save(); ctx.translate(cx,cy); ctx.rotate(mid);
+    ctx.fillStyle = '#031022'; ctx.font = `${parseInt(fontSizeInput.value||14)}px sans-serif`;
+    const label = showProb.checked ? `${it.name} (${Math.round(((it.weight||1)/total)*100)}%)` : it.name;
+    ctx.textAlign='right'; ctx.fillText(label, r-12, 6);
+    ctx.restore();
+
+    startAngle = end;
+  }
+  // pointer
+  drawPointer();
+}
+
+function drawPointer(){
+  const w = wheelCanvas.width; const cx=w/2, cy=w/2; ctx.save();
+  const style = pointerStyle.value;
+  ctx.translate(cx,cy);
+  // draw a top pointer relative to canvas top (0 deg)
+  ctx.restore();
+  // draw external pointer at top center
+  const topX = wheelCanvas.width/2; const topY = 8;
+  ctx.beginPath();
+  if(style==='triangle'){
+    ctx.moveTo(topX-14, topY+28); ctx.lineTo(topX+14, topY+28); ctx.lineTo(topX, topY); ctx.closePath();
+    ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.stroke();
+  } else if(style==='arrow'){
+    ctx.moveTo(topX-2, topY+34); ctx.lineTo(topX-2, topY+16); ctx.lineTo(topX-8, topY+22); ctx.moveTo(topX-2, topY+16); ctx.lineTo(topX+4, topY+22);
+    ctx.lineWidth=6; ctx.strokeStyle='rgba(0,0,0,0.8)'; ctx.stroke();
+  }
+}
+
+// escaping
+function escapeHtml(s){ return (s+'').replace(/[&<>]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c])); }
+
+// add names
+addBtn.addEventListener('click', ()=>{
+  const val = nameInput.value.trim(); if(!val) return;
+  const parts = val.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
+  parts.forEach(p=> state.items.push({id:uid(), name:p, color:randColor(), weight:1}));
+  nameInput.value=''; renderList(); drawWheel(); saveState();
+});
+
+pasteBtn.addEventListener('click', async ()=>{
+  try{ const t = await navigator.clipboard.readText(); nameInput.value = t; }catch(e){alert('Clipboard access denied')}
+});
+
+// sample
+loadSample.addEventListener('click', ()=>{
+  state.items = ['Alpha','Beta','Gamma','Delta','Epsilon'].map((n,i)=>({id:uid(), name:n, color:randColor(), weight:1})); renderList(); drawWheel(); saveState();
+});
+
+shuffleColorsBtn.addEventListener('click', ()=>{ state.items.forEach(it=>it.color=randColor()); renderList(); drawWheel(); saveState(); });
+autoWeightsBtn.addEventListener('click', ()=>{ state.items.forEach((it,i)=>it.weight = Math.max(1, Math.round(Math.random()*5))); renderList(); drawWheel(); saveState(); });
+
+clearAll.addEventListener('click', ()=>{ if(!confirm('Clear all items?')) return; state.items=[]; renderList(); drawWheel(); saveState(); });
+
+// export/import
+exportJson.addEventListener('click', ()=>{
+  const data = JSON.stringify({items:state.items},null,2);
+  const blob = new Blob([data],{type:'application/json'}); const url = URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='open_wheel.json'; a.click(); URL.revokeObjectURL(url);
+});
+
+importCsv.addEventListener('click', ()=>{
+  const csv = prompt('Paste CSV (name,weight)'); if(!csv) return; const lines = csv.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  lines.forEach(l=>{ const [name,w]=l.split(',').map(x=>x.trim()); if(name) state.items.push({id:uid(),name,weight: parseFloat(w)||1,color:randColor()}); }); renderList(); drawWheel(); saveState();
+});
+
+// drag/drop csv
+window.addEventListener('drop', (e)=>{ e.preventDefault(); const f = e.dataTransfer.files && e.dataTransfer.files[0]; if(f){ const reader=new FileReader(); reader.onload=()=>{ const txt=reader.result; const rows=txt.split(/\r?\n/).map(r=>r.trim()).filter(Boolean); rows.forEach(r=>{ const [name,w]=r.split(',').map(x=>x.trim()); if(name) state.items.push({id:uid(),name,weight:parseFloat(w)||1,color:randColor()}); }); renderList(); drawWheel(); saveState(); }; reader.readAsText(f); } });
+window.addEventListener('dragover',(e)=>e.preventDefault());
+
+// profiles
+saveProfile.addEventListener('click', ()=>{
+  const name = (profileName.value||'profile').trim(); if(!name) return alert('Give profile a name'); localStorage.setItem('open_wheel_profile_'+name, JSON.stringify({items:state.items})); alert('Saved profile '+name);
+});
+loadProfile.addEventListener('click', ()=>{
+  const name = (profileName.value||'profile').trim(); const raw=localStorage.getItem('open_wheel_profile_'+name); if(!raw) return alert('No profile with that name'); try{ const j=JSON.parse(raw); state.items=j.items||[]; renderList(); drawWheel(); }catch(e){alert('Failed to load')}
+});
+
+// spinning logic
+function easeOutCubic(t){ return 1 - Math.pow(1-t,3); }
+function easeOutQuart(t){ return 1 - Math.pow(1-t,4); }
+function linear(t){ return t; }
+
+function playTick(){ if(!enableSounds.checked) return; const url = tickSoundInput.value.trim(); if(url){ const a=new Audio(url); a.play().catch(()=>{}); } else { // default blip
+  const o=new Audio(); const ctxA = (window.AudioContext||window.webkitAudioContext) ? new (window.AudioContext||window.webkitAudioContext)() : null; if(ctxA){ const o2=ctxA.createOscillator(); const g=ctxA.createGain(); o2.connect(g); g.connect(ctxA.destination); o2.type='square'; o2.frequency.value=880; g.gain.value=0.01; o2.start(); setTimeout(()=>{ o2.stop(); ctxA.close().catch(()=>{}); },60); }
+ }
+}
+
+function stopSpin(){ if(state.spinAnimation) cancelAnimationFrame(state.spinAnimation); state.isSpinning=false; }
+
+spinBtn.addEventListener('click', ()=>startSpin());
+quickSpin.addEventListener('click', ()=>startSpin(1.5));
+stopBtn.addEventListener('click', ()=>{ stopSpin(); });
+
+function startSpin(overrideDuration){ if(state.items.length===0) return alert('Add some names first'); if(state.isSpinning) return; state.isSpinning=true; resultLabel.textContent='Spinning...'; const dur = (overrideDuration || parseFloat(spinDurationInput.value)||5)*1000; const easing = easingSelect.value; const easeFn = ({easeOutCubic,easeOutQuart,linear})[easing] || linear;
+ const start = performance.now(); const spins = 6 + Math.random()*6; const startAngle = state.angle % (Math.PI*2);
+ const target = startAngle + spins*Math.PI*2 + (Math.random()*Math.PI*2);
+ const tickEvery = 2*Math.PI / Math.max(6,state.items.length);
+ let lastTickIndex = -1;
+ function frame(now){ const t = Math.min(1,(now-start)/dur); const eased = easeFn({easeOutCubic,easeOutQuart,linear}[easing] ? undefined : undefined) || easeFn(t);
+ // compute current angle via lerp
+ const current = startAngle + (target - startAngle) * eased;
+ state.angle = current;
+ drawWheel();
+ // tick detection
+ const tickIndex = Math.floor((state.angle % (2*Math.PI))/tickEvery);
+ if(tickIndex !== lastTickIndex){ playTick(); lastTickIndex = tickIndex; }
+ if(t<1){ state.spinAnimation = requestAnimationFrame(frame); } else { // done
+    state.isSpinning=false; state.angle = target % (Math.PI*2);
+    const chosen = pickResult(); resultLabel.textContent = chosen ? chosen.name : '—'; saveState(); }
+ }
+ state.spinAnimation = requestAnimationFrame(frame);
+}
+
+function pickResult(){ if(state.items.length===0) return null; const total = state.items.reduce((s,i)=>s+(i.weight||1),0); // angle zero = right edge; pointer top is at -Math.PI/2. We'll convert.
+ const angleFromTop = ( ( -state.angle + Math.PI/2) % (Math.PI*2) + Math.PI*2 ) % (Math.PI*2);
+ let acc=0; for(const it of state.items){ const slice = (it.weight||1)/total*Math.PI*2; if(angleFromTop >= acc && angleFromTop < acc+slice) return it; acc+=slice; }
+ return state.items[0];
+}
+
+// initial
+loadState(); renderList(); drawWheel();
+
+// autosave throttle
+let saveTimer=0; function autoSaveThrottle(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>saveState(),600); }
+['nameInput','fontSize','strokeWidthInput'].forEach(()=>{});
+
+// keyboard shortcuts
+window.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()===' '){ e.preventDefault(); startSpin(); } if(e.key==='Escape'){ stopSpin(); } });
+
+// expose for debugging
+window.openWheel = {state, drawWheel, startSpin, stopSpin};
+
+</script>
+</body>
+</html>
